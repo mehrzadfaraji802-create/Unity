@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="fa" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiniForge — 3D Scene Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-app: #15161a;
+    --bg-panel: #1c1e22;
+    --bg-panel-alt: #202226;
+    --bg-inset: #131417;
+    --border: #2b2e34;
+    --border-soft: #24262b;
+    --text-primary: #e7e8ea;
+    --text-secondary: #8d919a;
+    --text-faint: #5a5e66;
+    --accent: #4fd1c5;
+    --accent-dim: #2c7d76;
+    --accent-warn: #ff7a59;
+    --accent-warn-dim: #8a3f30;
+    --radius: 6px;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%; width:100%;
+    background:var(--bg-app); color:var(--text-primary);
+    font-family:var(--sans); overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{ display:flex; flex-direction:column; height:100vh; width:100vw; }
+
+  /* Toolbar */
+  #toolbar{
+    height:46px; min-height:46px; display:flex; align-items:center; gap:10px;
+    padding:0 12px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    position:relative; z-index:20;
+  }
+  .brand{ display:flex; align-items:center; gap:8px; margin-right:8px; }
+  .brand-mark{
+    width:20px;height:20px; border-radius:4px;
+    background:linear-gradient(135deg, var(--accent), var(--accent-dim));
+    flex-shrink:0;
+  }
+  .brand-name{ font-weight:600; font-size:13.5px; letter-spacing:0.2px; color:var(--text-primary); }
+  .brand-sub{ font-size:11px; color:var(--text-faint); font-family:var(--mono); margin-left:2px; }
+
+  .tb-sep{ width:1px; height:22px; background:var(--border); margin:0 4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--bg-panel-alt); border:1px solid var(--border);
+    color:var(--text-primary); font-family:var(--sans); font-size:12.5px; font-weight:500;
+    padding:6px 10px; border-radius:var(--radius); cursor:pointer;
+    transition:background .12s, border-color .12s;
+  }
+  .btn:hover{ background:#26282d; border-color:#383b42; }
+  .btn:active{ transform:translateY(1px); }
+  .btn-icon{ font-size:13px; line-height:1; }
+
+  .btn-play{
+    background:rgba(79,209,197,0.12); border-color:var(--accent-dim); color:var(--accent);
+  }
+  .btn-play:hover{ background:rgba(79,209,197,0.2); }
+  .btn-play.is-active{
+    background:var(--accent); color:#0b1614; border-color:var(--accent);
+  }
+  .btn-stop{
+    background:rgba(255,122,89,0.10); border-color:var(--accent-warn-dim); color:var(--accent-warn);
+  }
+  .btn-stop:hover{ background:rgba(255,122,89,0.18); }
+  .btn-stop:disabled{ opacity:0.35; cursor:default; pointer-events:none; }
+
+  .dropdown{ position:relative; }
+  .dropdown-menu{
+    position:absolute; top:36px; left:0; min-width:170px;
+    background:var(--bg-panel-alt); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:0 10px 24px rgba(0,0,0,0.4); padding:4px; display:none; flex-direction:column;
+    z-index:50;
+  }
+  .dropdown-menu.open{ display:flex; }
+  .dropdown-item{
+    display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:4px;
+    font-size:12.5px; color:var(--text-primary); cursor:pointer; background:none; border:none;
+    text-align:left; font-family:var(--sans);
+  }
+  .dropdown-item:hover{ background:#2a2d33; }
+  .dd-glyph{ width:14px; text-align:center; color:var(--accent); font-size:12px; }
+
+  .toolbar-status{
+    margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--text-faint);
+    display:flex; align-items:center; gap:8px;
+  }
+  .dot{ width:6px; height:6px; border-radius:50%; background:var(--text-faint); }
+  .dot.live{ background:var(--accent); box-shadow:0 0 6px var(--accent); }
+
+  /* Body layout */
+  #body{ flex:1; display:flex; min-height:0; }
+
+  .panel{
+    background:var(--bg-panel); display:flex; flex-direction:column; min-height:0;
+  }
+  #hierarchy{ width:220px; border-right:1px solid var(--border); flex-shrink:0; }
+  #inspector{ width:260px; border-left:1px solid var(--border); flex-shrink:0; overflow-y:auto; }
+  #viewport-wrap{ flex:1; position:relative; background:var(--bg-inset); min-width:0; }
+  #viewport{ position:absolute; inset:0; }
+  canvas{ display:block; width:100%; height:100%; }
+
+  .panel-header{
+    height:34px; display:flex; align-items:center; padding:0 12px;
+    font-size:11px; font-weight:600; letter-spacing:0.4px; color:var(--text-secondary);
+    border-bottom:1px solid var(--border-soft); flex-shrink:0;
+  }
+
+  /* Hierarchy list */
+  #hierarchy-list{ flex:1; overflow-y:auto; padding:6px; }
+  .h-item{
+    display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:5px;
+    font-size:12.5px; color:var(--text-primary); cursor:pointer; margin-bottom:1px;
+    border:1px solid transparent;
+  }
+  .h-item:hover{ background:#25272c; }
+  .h-item.selected{ background:rgba(79,209,197,0.12); border-color:var(--accent-dim); color:var(--accent); }
+  .h-glyph{ font-size:12px; opacity:0.75; width:14px; text-align:center; }
+  .h-empty{ padding:16px 12px; font-size:12px; color:var(--text-faint); line-height:1.5; }
+
+  /* Viewport overlay hints */
+  .vp-hint{
+    position:absolute; bottom:10px; left:12px; font-family:var(--mono); font-size:10.5px;
+    color:var(--text-faint); pointer-events:none; line-height:1.6;
+  }
+  .vp-empty-msg{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    text-align:center; color:var(--text-faint); font-size:12.5px; pointer-events:none;
+  }
+
+  /* Inspector */
+  #inspector-body{ flex:1; overflow-y:auto; padding:12px; }
+  .insp-empty{ padding:24px 14px; text-align:center; color:var(--text-faint); font-size:12px; line-height:1.6; }
+  .field-group{ margin-bottom:16px; }
+  .field-group-title{
+    font-size:10.5px; font-weight:600; letter-spacing:0.5px; color:var(--text-faint);
+    margin-bottom:8px; text-transform:uppercase;
+  }
+  .name-input{
+    width:100%; background:var(--bg-inset); border:1px solid var(--border); color:var(--text-primary);
+    font-family:var(--sans); font-size:13px; font-weight:600; padding:7px 9px; border-radius:5px;
+    margin-bottom:14px;
+  }
+  .name-input:focus{ outline:none; border-color:var(--accent-dim); }
+
+  .vec3-row{ display:flex; gap:6px; }
+  .axis-field{ flex:1; display:flex; align-items:center; background:var(--bg-inset); border:1px solid var(--border); border-radius:5px; overflow:hidden; }
+  .axis-label{ font-family:var(--mono); font-size:10.5px; padding:0 6px; color:var(--text-faint); border-right:1px solid var(--border); align-self:stretch; display:flex; align-items:center; }
+  .axis-label.x{ color:#ff7a7a; } .axis-label.y{ color:#7aff9a; } .axis-label.z{ color:#7ab8ff; }
+  .axis-field input{
+    width:100%; background:transparent; border:none; color:var(--text-primary);
+    font-family:var(--mono); font-size:11.5px; padding:6px 6px; min-width:0;
+  }
+  .axis-field input:focus{ outline:none; }
+
+  .single-row{ display:flex; align-items:center; background:var(--bg-inset); border:1px solid var(--border); border-radius:5px; padding:2px 8px; }
+  .single-row input[type=number]{
+    width:100%; background:transparent; border:none; color:var(--text-primary); font-family:var(--mono);
+    font-size:11.5px; padding:5px 4px;
+  }
+  .single-row input:focus{ outline:none; }
+  .color-row{ display:flex; align-items:center; gap:8px; }
+  .color-row input[type=color]{
+    width:34px; height:28px; border:1px solid var(--border); border-radius:5px; background:none; padding:0; cursor:pointer;
+  }
+  .color-hex{ font-family:var(--mono); font-size:11.5px; color:var(--text-secondary); }
+
+  .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-primary); cursor:pointer; }
+  .checkbox-row input{ accent-color:var(--accent); width:14px; height:14px; }
+  .field-hint{ font-size:10.5px; color:var(--text-faint); margin-top:5px; line-height:1.5; }
+
+  .danger-btn{
+    width:100%; background:rgba(255,122,89,0.08); border:1px solid var(--accent-warn-dim);
+    color:var(--accent-warn); font-family:var(--sans); font-size:12px; font-weight:500;
+    padding:8px; border-radius:5px; cursor:pointer; margin-top:6px;
+  }
+  .danger-btn:hover{ background:rgba(255,122,89,0.16); }
+
+  ::-webkit-scrollbar{ width:9px; height:9px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:#33363c; border-radius:5px; }
+  ::-webkit-scrollbar-thumb:hover{ background:#40434a; }
+
+  @media (max-width: 760px){
+    #hierarchy{ width:150px; }
+    #inspector{ width:190px; }
+    .brand-sub{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">MiniForge</div>
+      <div class="brand-sub">scene editor</div>
+    </div>
+    <div class="tb-sep"></div>
+
+    <div class="dropdown" id="add-dropdown">
+      <button class="btn" id="add-btn"><span class="btn-icon">＋</span> Add Object</button>
+      <div class="dropdown-menu" id="add-menu">
+        <button class="dropdown-item" data-type="cube"><span class="dd-glyph">▢</span> Cube</button>
+        <button class="dropdown-item" data-type="sphere"><span class="dd-glyph">○</span> Sphere</button>
+        <button class="dropdown-item" data-type="cylinder"><span class="dd-glyph">▮</span> Cylinder</button>
+        <button class="dropdown-item" data-type="plane"><span class="dd-glyph">▭</span> Plane</button>
+        <button class="dropdown-item" data-type="light"><span class="dd-glyph">✦</span> Point Light</button>
+      </div>
+    </div>
+
+    <div class="tb-sep"></div>
+    <button class="btn btn-play" id="play-btn"><span class="btn-icon">▶</span> Play</button>
+    <button class="btn btn-stop" id="stop-btn" disabled><span class="btn-icon">■</span> Stop</button>
+
+    <div class="toolbar-status">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Editing</span>
+    </div>
+  </div>
+
+  <div id="body">
+    <div class="panel" id="hierarchy">
+      <div class="panel-header">HIERARCHY</div>
+      <div id="hierarchy-list"></div>
+    </div>
+
+    <div id="viewport-wrap">
+      <div id="viewport"></div>
+      <div class="vp-empty-msg" id="vp-empty">Scene is empty<br>Add an object to get started</div>
+      <div class="vp-hint">drag: orbit · scroll: zoom · shift+drag: pan</div>
+    </div>
+
+    <div class="panel" id="inspector">
+      <div class="panel-header">INSPECTOR</div>
+      <div id="inspector-body"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+
+  /* ---------------------------------------------------------------------
+   * Scene / renderer / camera setup
+   * ------------------------------------------------------------------- */
+  const viewportEl = document.getElementById('viewport');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x131417);
+
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  viewportEl.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0x8a8f9a, 0.55));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+  sun.position.set(6, 10, 4);
+  scene.add(sun);
+
+  const grid = new THREE.GridHelper(24, 24, 0x33363c, 0x22242a);
+  scene.add(grid);
+  const axes = new THREE.AxesHelper(1.4);
+  axes.position.y = 0.001;
+  scene.add(axes);
+
+  function resizeRenderer(){
+    const w = viewportEl.clientWidth || 1;
+    const h = viewportEl.clientHeight || 1;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resizeRenderer);
+
+  /* ---------------------------------------------------------------------
+   * Custom orbit camera (no external controls dependency)
+   * ------------------------------------------------------------------- */
+  const cam = { radius: 9, theta: Math.PI * 0.28, phi: Math.PI * 0.36, target: new THREE.Vector3(0, 0.5, 0) };
+  let dragging = false, panning = false, lastX = 0, lastY = 0;
+
+  function updateCamera(){
+    const x = cam.target.x + cam.radius * Math.sin(cam.phi) * Math.sin(cam.theta);
+    const y = cam.target.y + cam.radius * Math.cos(cam.phi);
+    const z = cam.target.z + cam.radius * Math.sin(cam.phi) * Math.cos(cam.theta);
+    camera.position.set(x, y, z);
+    camera.lookAt(cam.target);
+  }
+
+  renderer.domElement.addEventListener('mousedown', (e) => {
+    lastX = e.clientX; lastY = e.clientY;
+    if (e.shiftKey || e.button === 2) panning = true; else dragging = true;
+  });
+  window.addEventListener('mouseup', () => { dragging = false; panning = false; });
+  window.addEventListener('mousemove', (e) => {
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    if (dragging){
+      cam.theta -= dx * 0.006;
+      cam.phi -= dy * 0.006;
+      cam.phi = Math.max(0.12, Math.min(Math.PI - 0.12, cam.phi));
+      updateCamera();
+    } else if (panning){
+      const right = new THREE.Vector3(Math.cos(cam.theta), 0, -Math.sin(cam.theta));
+      const up = new THREE.Vector3(0, 1, 0);
+      cam.target.addScaledVector(right, -dx * 0.01);
+      cam.target.addScaledVector(up, dy * 0.01);
+      updateCamera();
+    }
+  });
+  renderer.domElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cam.radius *= (1 + e.deltaY * 0.0012);
+    cam.radius = Math.max(2, Math.min(40, cam.radius));
+    updateCamera();
+  }, { passive: false });
+  renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  /* ---------------------------------------------------------------------
+   * Scene graph data model
+   * ------------------------------------------------------------------- */
+  let objects = [];      // { id, name, type, mesh, light, position, rotation, scale, color, intensity, rigidbody, velocity }
+  let selectedId = null;
+  let uidCounter = 1;
+  let counters = { cube: 0, sphere: 0, cylinder: 0, plane: 0, light: 0 };
+  let outlineHelper = null;
+
+  const PALETTE = [0x4fd1c5, 0xff7a59, 0xf2c14e, 0x9d7aff, 0x7ac9ff, 0x8fe36f];
+  function nextColor(){ return PALETTE[uidCounter % PALETTE.length]; }
+
+  function makeGeometry(type){
+    switch(type){
+      case 'cube': return new THREE.BoxGeometry(1, 1, 1);
+      case 'sphere': return new THREE.SphereGeometry(0.55, 26, 18);
+      case 'cylinder': return new THREE.CylinderGeometry(0.5, 0.5, 1, 20);
+      case 'plane': return new THREE.PlaneGeometry(6, 6, 1, 1);
+    }
+  }
+
+  function addObject(type){
+    const id = 'obj_' + (uidCounter++);
+    counters[type] = (counters[type] || 0) + 1;
+    const name = ({cube:'Cube', sphere:'Sphere', cylinder:'Cylinder', plane:'Plane', light:'Light'})[type] + ' ' + counters[type];
+    const colorHex = nextColor();
+
+    let entry = {
+      id, name, type,
+      position: { x: 0, y: type === 'plane' ? 0 : 1, z: 0 },
+      rotation: { x: type === 'plane' ? -90 : 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+      color: '#' + colorHex.toString(16).padStart(6, '0'),
+      intensity: type === 'light' ? 1.2 : undefined,
+      rigidbody: false,
+      velocity: { x: 0, y: 0, z: 0 },
+      mesh: null, light: null
+    };
+
+    if (type === 'light'){
+      const light = new THREE.PointLight(colorHex, entry.intensity, 20, 2);
+      const helperGeo = new THREE.SphereGeometry(0.08, 10, 8);
+      const helperMat = new THREE.MeshBasicMaterial({ color: colorHex });
+      const helperMesh = new THREE.Mesh(helperGeo, helperMat);
+      light.add(helperMesh);
+      light.position.set(entry.position.x, entry.position.y, entry.position.z);
+      scene.add(light);
+      entry.light = light;
+      entry.mesh = light; // used for transform + outline targeting
+    } else {
+      const geo = makeGeometry(type);
+      const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.55, metalness: 0.08 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(entry.position.x, entry.position.y, entry.position.z);
+      mesh.rotation.set(THREE.Math.degToRad(entry.rotation.x), 0, 0);
+      scene.add(mesh);
+      entry.mesh = mesh;
+    }
+
+    objects.push(entry);
+    selectObject(id);
+    renderHierarchy();
+    updateEmptyMsg();
+    return entry;
+  }
+
+  function removeObject(id){
+    const idx = objects.findIndex(o => o.id === id);
+    if (idx === -1) return;
+    const entry = objects[idx];
+    if (entry.light) scene.remove(entry.light);
+    else if (entry.mesh) scene.remove(entry.mesh);
+    objects.splice(idx, 1);
+    if (selectedId === id) selectObject(null);
+    renderHierarchy();
+    updateEmptyMsg();
+  }
+
+  function getSelected(){ return objects.find(o => o.id === selectedId) || null; }
+
+  function selectObject(id){
+    selectedId = id;
+    if (outlineHelper){ scene.remove(outlineHelper); outlineHelper = null; }
+    const entry = getSelected();
+    if (entry && entry.type !== 'light'){
+      outlineHelper = new THREE.BoxHelper(entry.mesh, 0x4fd1c5);
+      scene.add(outlineHelper);
+    }
+    renderHierarchy();
+    renderInspector();
+  }
+
+  function updateEmptyMsg(){
+    document.getElementById('vp-empty').style.display = objects.length ? 'none' : 'block';
+  }
+
+  /* ---------------------------------------------------------------------
+   * Hierarchy panel
+   * ------------------------------------------------------------------- */
+  const glyphFor = { cube: '▢', sphere: '○', cylinder: '▮', plane: '▭', light: '✦' };
+
+  function renderHierarchy(){
+    const list = document.getElementById('hierarchy-list');
+    if (!objects.length){
+      list.innerHTML = '<div class="h-empty">No objects yet.<br>Use "Add Object" above to create one.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    objects.forEach(o => {
+      const row = document.createElement('div');
+      row.className = 'h-item' + (o.id === selectedId ? ' selected' : '');
+      row.innerHTML = '<span class="h-glyph">' + glyphFor[o.type] + '</span><span>' + o.name + '</span>';
+      row.addEventListener('click', () => selectObject(o.id));
+      list.appendChild(row);
+    });
+  }
+
+  /* ---------------------------------------------------------------------
+   * Inspector panel
+   * ------------------------------------------------------------------- */
+  function vec3Row(labelId, obj, key, onChange, step){
+    const wrap = document.createElement('div');
+    wrap.className = 'vec3-row';
+    ['x','y','z'].forEach(axis => {
+      const field = document.createElement('div');
+      field.className = 'axis-field';
+      const lab = document.createElement('div');
+      lab.className = 'axis-label ' + axis;
+      lab.textContent = axis.toUpperCase();
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = step || 0.1;
+      input.value = obj[key][axis];
+      input.addEventListener('input', () => {
+        obj[key][axis] = parseFloat(input.value) || 0;
+        onChange();
+      });
+      field.appendChild(lab); field.appendChild(input);
+      wrap.appendChild(field);
+    });
+    return wrap;
+  }
+
+  function fieldGroup(title, contentEl){
+    const g = document.createElement('div');
+    g.className = 'field-group';
+    const t = document.createElement('div');
+    t.className = 'field-group-title';
+    t.textContent = title;
+    g.appendChild(t); g.appendChild(contentEl);
+    return g;
+  }
+
+  function applyTransform(entry){
+    const target = entry.mesh;
+    target.position.set(entry.position.x, entry.position.y, entry.position.z);
+    target.rotation.set(
+      THREE.Math.degToRad(entry.rotation.x),
+      THREE.Math.degToRad(entry.rotation.y),
+      THREE.Math.degToRad(entry.rotation.z)
+    );
+    if (entry.type !== 'light'){
+      target.scale.set(entry.scale.x, entry.scale.y, entry.scale.z);
+    }
+    if (outlineHelper && entry.id === selectedId && entry.type !== 'light'){
+      outlineHelper.update();
+    }
+  }
+
+  function renderInspector(){
+    const body = document.getElementById('inspector-body');
+    body.innerHTML = '';
+    const entry = getSelected();
+    if (!entry){
+      const empty = document.createElement('div');
+      empty.className = 'insp-empty';
+      empty.textContent = 'Select an object in the Hierarchy to inspect and edit its properties.';
+      body.appendChild(empty);
+      return;
+    }
+
+    const nameInput = document.createElement('input');
+    nameInput.className = 'name-input';
+    nameInput.value = entry.name;
+    nameInput.addEventListener('input', () => { entry.name = nameInput.value; renderHierarchy(); });
+    body.appendChild(nameInput);
+
+    body.appendChild(fieldGroup('Position', vec3Row(null, entry, 'position', () => applyTransform(entry))));
+    body.appendChild(fieldGroup('Rotation °', vec3Row(null, entry, 'rotation', () => applyTransform(entry), 1)));
+    if (entry.type !== 'light'){
+      body.appendChild(fieldGroup('Scale', vec3Row(null, entry, 'scale', () => applyTransform(entry))));
+    }
+
+    const colorWrap = document.createElement('div');
+    colorWrap.className = 'color-row';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = entry.color;
+    const hexLabel = document.createElement('span');
+    hexLabel.className = 'color-hex';
+    hexLabel.textContent = entry.color;
+    colorInput.addEventListener('input', () => {
+      entry.color = colorInput.value;
+      hexLabel.textContent = colorInput.value;
+      const c = new THREE.Color(colorInput.value);
+      if (entry.type === 'light'){ entry.light.color.set(c); }
+      else { entry.mesh.material.color.set(c); }
+    });
+    colorWrap.appendChild(colorInput); colorWrap.appendChild(hexLabel);
+    body.appendChild(fieldGroup('Color', colorWrap));
+
+    if (entry.type === 'light'){
+      const intRow = document.createElement('div');
+      intRow.className = 'single-row';
+      const intInput = document.createElement('input');
+      intInput.type = 'number'; intInput.step = 0.1; intInput.min = 0;
+      intInput.value = entry.intensity;
+      intInput.addEventListener('input', () => {
+        entry.intensity = parseFloat(intInput.value) || 0;
+        entry.light.intensity = entry.intensity;
+      });
+      intRow.appendChild(intInput);
+      body.appendChild(fieldGroup('Intensity', intRow));
+    } else {
+      const rbRow = document.createElement('label');
+      rbRow.className = 'checkbox-row';
+      const rbInput = document.createElement('input');
+      rbInput.type = 'checkbox';
+      rbInput.checked = entry.rigidbody;
+      rbInput.addEventListener('change', () => { entry.rigidbody = rbInput.checked; });
+      rbRow.appendChild(rbInput);
+      rbRow.appendChild(document.createTextNode('Rigidbody (affected by gravity in Play mode)'));
+      const rbGroup = fieldGroup('Physics', rbRow);
+      const hint = document.createElement('div');
+      hint.className = 'field-hint';
+      hint.textContent = 'Falls under gravity and settles on the ground plane (y = 0) while playing.';
+      rbGroup.appendChild(hint);
+      body.appendChild(rbGroup);
+    }
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'danger-btn';
+    delBtn.textContent = 'Delete Object';
+    delBtn.addEventListener('click', () => removeObject(entry.id));
+    body.appendChild(delBtn);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Add Object dropdown
+   * ------------------------------------------------------------------- */
+  const addBtn = document.getElementById('add-btn');
+  const addMenu = document.getElementById('add-menu');
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    addMenu.classList.toggle('open');
+  });
+  document.addEventListener('click', () => addMenu.classList.remove('open'));
+  addMenu.querySelectorAll('.dropdown-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      addObject(item.getAttribute('data-type'));
+      addMenu.classList.remove('open');
+    });
+  });
+
+  /* ---------------------------------------------------------------------
+   * Play / Stop — simple gravity + ground-collision simulation
+   * ------------------------------------------------------------------- */
+  let playing = false;
+  let snapshot = null;
+  const playBtn = document.getElementById('play-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const statusDot = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const GRAVITY = -9.8;
+
+  function halfHeight(entry){
+    if (entry.type === 'sphere') return 0.55 * entry.scale.y;
+    if (entry.type === 'cylinder') return 0.5 * entry.scale.y;
+    if (entry.type === 'plane') return 0;
+    return 0.5 * entry.scale.y; // cube
+  }
+
+  function startPlay(){
+    if (playing) return;
+    playing = true;
+    snapshot = objects.map(o => ({
+      id: o.id,
+      position: { ...o.position },
+      rotation: { ...o.rotation }
+    }));
+    objects.forEach(o => { o.velocity = { x: 0, y: 0, z: 0 }; });
+    playBtn.classList.add('is-active');
+    stopBtn.disabled = false;
+    statusDot.classList.add('live');
+    statusText.textContent = 'Playing';
+  }
+
+  function stopPlay(){
+    if (!playing) return;
+    playing = false;
+    if (snapshot){
+      snapshot.forEach(s => {
+        const entry = objects.find(o => o.id === s.id);
+        if (!entry) return;
+        entry.position = { ...s.position };
+        entry.rotation = { ...s.rotation };
+        applyTransform(entry);
+      });
+    }
+    snapshot = null;
+    playBtn.classList.remove('is-active');
+    stopBtn.disabled = true;
+    statusDot.classList.remove('live');
+    statusText.textContent = 'Editing';
+    renderInspector();
+  }
+
+  playBtn.addEventListener('click', startPlay);
+  stopBtn.addEventListener('click', stopPlay);
+
+  function stepPhysics(dt){
+    objects.forEach(entry => {
+      if (!entry.rigidbody || entry.type === 'light') return;
+      entry.velocity.y += GRAVITY * dt;
+      entry.position.y += entry.velocity.y * dt;
+      const floorLimit = halfHeight(entry);
+      if (entry.position.y <= floorLimit){
+        entry.position.y = floorLimit;
+        entry.velocity.y = Math.abs(entry.velocity.y) < 0.5 ? 0 : -entry.velocity.y * 0.35;
+      }
+      applyTransform(entry);
+    });
+    if (selectedId) renderInspectorValuesOnly();
+  }
+
+  // Light-weight refresh of just the numeric fields while playing, so the
+  // inspector reflects live physics without rebuilding the whole panel.
+  function renderInspectorValuesOnly(){
+    const entry = getSelected();
+    if (!entry) return;
+    const inputs = document.querySelectorAll('#inspector-body .vec3-row')[0];
+    if (!inputs) return;
+    const posInputs = inputs.querySelectorAll('input');
+    if (posInputs.length === 3){
+      posInputs[0].value = entry.position.x.toFixed(2);
+      posInputs[1].value = entry.position.y.toFixed(2);
+      posInputs[2].value = entry.position.z.toFixed(2);
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * Render loop
+   * ------------------------------------------------------------------- */
+  const clock = new THREE.Clock();
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    if (playing) stepPhysics(dt);
+    renderer.render(scene, camera);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Boot
+   * ------------------------------------------------------------------- */
+  resizeRenderer();
+  updateCamera();
+  renderHierarchy();
+  renderInspector();
+  updateEmptyMsg();
+
+  // Seed the scene with a small starter setup.
+  addObject('plane');
+  addObject('cube');
+  addObject('light');
+
+  animate();
+})();
+</script>
+</body>
+</html>
